@@ -209,7 +209,24 @@ git add <file1> <file2>
 
 ---
 
-### 阶段 4：执行 git commit 提交
+### 阶段 4：执行 git add 暂存
+
+用户确认 commit message 后，执行暂存：
+
+```bash
+git add -A
+```
+
+或者根据用户需求暂存特定文件：
+```bash
+git add <file1> <file2>
+```
+
+暂存后展示已暂存的文件列表，等待用户确认是否继续提交。
+
+---
+
+### 阶段 5：执行 git commit 提交
 
 用户确认暂存文件无误后，执行提交：
 
@@ -223,29 +240,45 @@ git commit -m "<commit message>"
 
 ---
 
-### 阶段 5：询问是否推送到远程（可选）
+### 阶段 6：询问并执行推送远程仓库（必须）
 
-提交成功后，询问用户：
+提交成功后，必须询问用户是否推送到远程仓库，并执行相应操作：
 
 ```
-提交成功！是否推送到远程仓库？
+提交成功！当前分支为 <current-branch>，是否立即推送到远程仓库？
 
 【推送信息】
-分支：<current-branch>
-远程：origin
+- 本地分支： <current-branch>
+- 远程仓库： origin
+- 提交哈希： <commit-hash>
 
-请确认是否执行 git push？(是/否)
+重要提示：如不推送，此次提交将仅保存在本地
+
+请选择操作：
+1. 推送至远程仓库 (git push origin <current-branch>)
+2. 仅保留在本地（后续可手动推送）
 ```
 
-用户确认后执行：
-```bash
-git push origin <current-branch>
-```
+**用户选择处理**：
 
-如果远程分支不存在，提示用户设置上游分支：
-```bash
-git push -u origin <current-branch>
-```
+1. **如果用户选择推送**：执行推送命令并反馈结果
+   ```bash
+   git push origin <current-branch>
+   ```
+   如果远程分支不存在，自动使用上游分支设置：
+   ```bash
+   git push -u origin <current-branch>
+   ```
+
+2. **如果用户选择保留在本地**：告知用户如何手动推送
+   ```
+   已将提交保留在本地。
+   
+   以后可通过以下命令推送：
+   git push origin <current-branch>
+   ```
+
+**重要**：必须等待用户明确选择后才能继续。
 
 ---
 
