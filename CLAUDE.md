@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 <技能名>/
-├── skill.md           # 技能定义和执行流程（必需）
+├── SKILL.md           # 技能定义和执行流程（必需）
 └── references/        # 参考资料（可选）
     └── *.md           # 技能相关的参考文档
 ```
@@ -52,7 +52,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ls -d */
 
 # 查看技能定义
-cat <技能名>/skill.md
+cat <技能名>/SKILL.md
 ```
 
 ---
