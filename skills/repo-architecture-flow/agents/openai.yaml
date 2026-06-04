@@ -1,0 +1,3 @@
+display_name: 仓库流程架构图
+short_description: 生成可编辑仓库架构图。
+default_prompt: 扫描当前仓库，并生成 SVG 和 drawio 两份流程架构图。
