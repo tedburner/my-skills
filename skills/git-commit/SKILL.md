@@ -1,3 +1,14 @@
+---
+name: git-commit
+description: >
+  Git Commit 生成器 — 分析代码改动，自动生成带 Gitmoji 的规范化 commit message，分阶段确认后提交。
+  当用户想要提交代码、生成 commit message、提交改动时使用。
+  触发词包括但不限于：提交代码、git commit、commit、提交一下、帮我提交、生成commit、
+  提交改动、保存改动、推代码、发commit、写commit message、提交并推送。
+  即使用户只是说"提交"或"帮我推一下"，只要上下文涉及代码改动的 git 提交，都应该触发。
+  不要用于查看 git log、git blame、git diff 等只读操作。
+---
+
 # Git Commit 生成器
 
 根据当前分支改动生成 git commit 内容，分阶段确认后再提交代码。
@@ -27,9 +38,9 @@ git diff
 git diff --cached
 ```
 
-#### 合并冲突检测（必须）
+#### 合并冲突检测
 
-在分析改动之前，**必须先检查是否存在未解决的合并冲突**。
+在分析改动之前，先检查是否存在未解决的合并冲突——冲突状态下提交会产生混乱的提交历史，应该先解决再走提交流程。
 
 通过 `git status` 输出检测以下标志：
 
@@ -43,7 +54,7 @@ git diff --cached
 - "Unmerged paths"    → 未合并的文件列表
 ```
 
-**如果检测到冲突，必须立即暂停并提示用户**：
+**如果检测到冲突，立即暂停并提示用户**：
 
 ```
 ⚠️ 检测到未解决的合并冲突
@@ -98,13 +109,13 @@ git diff --cached
 
 ---
 
-### 阶段 1.5：安全检查（关键）
+### 阶段 1.5：安全检查
 
-**在生成 commit message 之前，必须检查改动中是否包含敏感信息。**
+在生成 commit message 之前，检查改动中是否包含敏感信息。误提交凭证到仓库（尤其公开仓库）可能导致严重的安全事故，事后清理历史的成本很高。
 
 #### 敏感文件类型检查
 
-如改动包含以下文件，**必须暂停并提醒用户**：
+如改动包含以下文件，暂停并提醒用户：
 
 | 文件类型 | 风险 | 示例 |
 |----------|------|------|
@@ -121,7 +132,7 @@ git diff --cached
 检查 `git diff` 内容是否包含以下模式：
 
 ```
-🔴 高危模式（发现则必须警告）：
+🔴 高危模式（发现则警告）：
 - password = "xxx" / password: "xxx"
 - secret = "xxx" / secret_key = "xxx"
 - api_key = "xxx" / apiKey = "xxx"
@@ -167,7 +178,7 @@ git diff --cached
 
 ### 阶段 2：生成 commit message 并确认
 
-根据确认后的改动点和自动推断的 Gitmoji 生成 commit message：
+根据确认后的改动点和自动推断的 Gitmoji 生成 commit message。
 
 **格式**：
 ```
@@ -207,29 +218,14 @@ git diff --cached
 5. :white_check_mark: 补充导出功能单元测试
 ```
 
-**展示 commit message 并等待用户确认**：
-
-展示生成的 commit message 后，**必须使用 AskUserQuestion 工具**给用户 Yes/No 选择：
-
-```
-【生成的 commit message】
-:sparkles: 新增用户管理模块
-
-1. 新增 UserService 处理用户业务逻辑
-2. 新增 UserController 提供 REST API 接口
-3. 补充单元测试覆盖核心功能
-
-请确认此 commit message 是否正确？
-- Yes: 使用此 message，继续执行提交
-- No: 我将手动输入改动点描述
-```
+**展示 commit message 并等待用户确认**——使用 AskUserQuestion 工具给用户 Yes/No 选择。
 
 **用户选择处理**：
 
 1. **如果用户选择 Yes**：使用生成的 commit message，进入阶段 3
 2. **如果用户选择 No**：请用户输入想要的描述，重新生成后再次确认
 
-**重要**：在用户确认 commit message 之前，不要执行任何 git add 或 git commit 命令。
+> 在用户确认 commit message 之前，不执行任何 git add 或 git commit 命令。
 
 ---
 
@@ -264,11 +260,11 @@ git commit -m "<commit message>"
 
 ---
 
-### 阶段 5：询问并执行推送远程仓库（必须）
+### 阶段 5：询问并执行推送远程仓库
 
-提交成功后，**先执行远程同步检查**，再询问用户是否推送。
+提交成功后，先执行远程同步检查，再询问用户是否推送。跳过同步检查直接推送可能在远程有新提交时产生冲突。
 
-#### 推送前远程同步检查（必须）
+#### 推送前远程同步检查
 
 ```bash
 # 获取远程最新状态（不合并）
@@ -287,7 +283,7 @@ git rev-list --left-right --count origin/<current-branch>...<current-branch>
 | `M 0` | 远程有 M 个新提交，本地无新提交 | ✅ 正常情况（极少出现） |
 | `0 0` | 本地与远程一致 | ✅ 无需推送 |
 
-**如果远程有新提交（M > 0），必须提示用户**：
+**如果远程有新提交（M > 0），提示用户**：
 
 ```
 ⚠️ 远程分支存在新提交，直接推送可能导致冲突
@@ -344,42 +340,11 @@ git rev-list --left-right --count origin/<current-branch>...<current-branch>
    git push origin <current-branch>
    ```
 
-**重要**：必须等待用户明确选择后才能继续。
-
 ---
 
-## Gitmoji 自动映射规则
+## Gitmoji 映射
 
-根据改动特征自动选择最合适的 Gitmoji：
-
-| 改动特征 | Shortcode | 说明 |
-|----------|-----------|------|
-| 新增功能、模块、接口 | `:sparkles:` | 新功能 |
-| 修复 bug、错误 | `:bug:` | Bug 修复 |
-| 紧急线上修复 | `:ambulance:` | 紧急热修复 |
-| 文档、README、注释 | `:memo:` | 文档 |
-| 代码重构、逻辑优化 | `:recycle:` | 重构 |
-| 删除代码/文件 | `:fire:` | 删除 |
-| UI、样式文件 | `:lipstick:` | UI 样式 |
-| 部署、上线 | `:rocket:` | 部署 |
-| 测试用例 | `:white_check_mark:` | 测试 |
-| 安全漏洞修复 | `:lock:` | 安全 |
-| 编译器/linter 警告 | `:rotating_light:` | 警告 |
-| CI/CD 配置 | `:construction_worker:` | CI 系统 |
-| CI 构建修复 | `:green_heart:` | CI 修复 |
-| 依赖升级 | `:arrow_up:` | 升级 |
-| 依赖降级 | `:arrow_down:` | 降级 |
-| 新增依赖 | `:heavy_plus_sign:` | 添加依赖 |
-| 移除依赖 | `:heavy_minus_sign:` | 删除依赖 |
-| 配置文件 | `:wrench:` | 配置 |
-| 脚本文件 | `:hammer:` | 脚本 |
-| 编译文件/包 | `:package:` | 包 |
-| 代码格式/结构 | `:art:` | 代码结构 |
-| 性能优化 | `:zap:` | 性能 |
-| 破坏性变更 | `:boom:` | 破坏性变更 |
-| 回滚 | `:rewind:` | 回滚 |
-| 国际化 | `:globe_with_meridians:` | i18n |
-| 无法明确判断 | `:sparkles:` | 默认新功能 |
+根据改动特征自动选择最合适的 Gitmoji。完整的映射规则表见 [`references/gitmoji-mapping.md`](references/gitmoji-mapping.md)。
 
 > **完整 Gitmoji 参考**：见 [`references/gitmojis.md`](references/gitmojis.md)
 
@@ -387,10 +352,9 @@ git rev-list --left-right --count origin/<current-branch>...<current-branch>
 
 ## 注意事项
 
-- **分阶段确认**：每个阶段都等待用户确认后再继续
-- **安全检查必须执行**：阶段 1.5 必须检查敏感文件和敏感代码模式
-- **冲突检测必须执行**：阶段 1 必须检测未解决的合并冲突，有冲突时终止流程
-- **推送前同步检查必须执行**：阶段 6 推送前必须 `git fetch` 并检查远程分支状态，避免推送冲突
+- **分阶段确认**：每个阶段都等待用户确认后再继续，避免误操作
+- **安全检查**：阶段 1.5 检查敏感文件和代码模式，防止凭证泄露
+- **冲突检测**：阶段 1 检测合并冲突，有冲突时终止流程让用户先解决
+- **推送前同步检查**：阶段 5 推送前 fetch 并检查远程分支状态，避免推送冲突
 - **无改动处理**：如工作目录干净，告知用户没有待提交的改动
-- **灵活调整**：用户可以在任何阶段要求修改或取消
 - **Gitmoji 格式**：使用 `:name:` 格式（如 `:sparkles:`），在 GitHub/GitLab 会自动渲染为 emoji
