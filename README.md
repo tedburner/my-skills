@@ -6,7 +6,7 @@
 
 | 技能名称 | 命令 | 说明 |
 |----------|------|------|
-| Git Commit 生成器 | `/git-commit` | 自动分析代码改动，生成规范化的 git commit message。支持敏感信息检测、Gitmoji 自动推荐、分阶段确认提交 |
+| Git Commit 生成器 | `/git-commit` | 自动分析代码改动，生成简洁的 Gitmoji commit message，并支持确认后提交与可选推送 |
 | Repo 架构图生成器 | `/repo-architecture-flow` | 分析仓库结构并生成 Mermaid 架构图，支持导出 SVG/PNG/PDF |
 
 ---

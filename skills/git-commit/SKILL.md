@@ -1,8 +1,8 @@
 ---
 name: git-commit
 description: >
-  Git Commit 生成器 — 分析代码改动，自动生成带 Gitmoji 的规范化 commit message，分阶段确认后提交。
-  当用户想要提交代码、生成 commit message、提交改动时使用。
+  Git Commit 生成器 — 以生成简洁、准确的 Gitmoji commit message 为核心，分析当前改动并在用户确认后提交。
+  当用户想要提交代码、生成 commit message、提交改动、解决提交前冲突、或提交后推送时使用。
   触发词包括但不限于：提交代码、git commit、commit、提交一下、帮我提交、生成commit、
   提交改动、保存改动、推代码、发commit、写commit message、提交并推送。
   即使用户只是说"提交"或"帮我推一下"，只要上下文涉及代码改动的 git 提交，都应该触发。
@@ -11,350 +11,195 @@ description: >
 
 # Git Commit 生成器
 
-根据当前分支改动生成 git commit 内容，分阶段确认后再提交代码。
+这个技能的核心产物是 **简洁、准确、可直接使用的 commit message**。
 
-## 使用方式
+先快速确认工作区是否可提交，再把主要精力放在提炼改动意图。除非发现风险，不要输出大段操作教程。
 
-用户输入：`/git-commit`
+---
 
-Skill 会**自动分析**当前分支的改动内容，智能推断并选择最合适的 Gitmoji 类型。
+## 总原则
+
+- Commit message 优先表达"为什么/做了什么"，不要堆文件清单。
+- 标题要短，一眼能看懂；body 只保留关键改动。
+- 小改动可以只有标题，不强行写编号列表。
+- 用户确认 commit message 前，不执行 `git add` 或 `git commit`。
+- 冲突、安全风险、远程分歧只做必要提示；提示要短，并给出下一步。
 
 ---
 
 ## 执行流程
 
-### 阶段 1：分析改动并自动推断 Gitmoji
+### 1. 快速读取状态
 
-执行命令分析当前工作状态：
+执行最少命令了解当前状态：
 
 ```bash
-# 查看工作状态
+git status --short
 git status
-
-# 查看未暂存的改动内容
 git diff
-
-# 如果已有暂存文件，也查看暂存的改动
 git diff --cached
 ```
 
-#### 合并冲突检测
+如果工作区没有未提交改动，直接告知用户无需提交。
 
-在分析改动之前，先检查是否存在未解决的合并冲突——冲突状态下提交会产生混乱的提交历史，应该先解决再走提交流程。
+### 2. 提交前阻断检查
 
-通过 `git status` 输出检测以下标志：
+先检查两类会影响提交安全性的情况。
 
-```
-冲突标志：
-- "both modified"     → 双方都修改了同一文件
-- "both added"        → 双方都新增了同一文件
-- "both deleted"      → 双方都删除了同一文件
-- "deleted by us"     → 当前分支删除，对方修改
-- "deleted by them"   → 当前分支修改，对方删除
-- "Unmerged paths"    → 未合并的文件列表
-```
+#### 合并冲突
 
-**如果检测到冲突，立即暂停并提示用户**：
+如 `git status` 出现 `Unmerged paths`、`both modified`、`both added`、`deleted by us`、`deleted by them` 等冲突状态，停止提交流程。
 
-```
-⚠️ 检测到未解决的合并冲突
+输出保持简短：
 
-【冲突文件列表】
-- src/main/java/UserService.java（both modified）
-- src/main/java/UserController.java（both modified）
+```text
+检测到未解决冲突，先暂停提交。
 
-当前工作目录存在未解决的合并冲突，无法进行提交。
+冲突文件：
+- path/to/file
 
-【建议操作】
-1. 手动编辑冲突文件，解决冲突标记（<<<<<<< / ======= / >>>>>>>）
-2. 解决后执行：
-   git add <已解决的文件>
-3. 如需放弃合并：git merge --abort
-4. 如需放弃 rebase：git rebase --abort
-
-请先解决冲突后，再重新执行 /git-commit。
+请先解决冲突并 git add 已解决文件，然后再重新执行 /git-commit。
+如需放弃当前合并/变基，可使用 git merge --abort 或 git rebase --abort。
 ```
 
-**检测到冲突时，终止本次流程，不进入后续阶段。**
+#### 敏感信息
 
----
+检查文件名和 diff 中是否出现明显敏感信息：
 
-**输出改动点列表**，按**功能模块**分组展示：
+- `.env`、`.env.*`
+- `credentials`、`service-account`
+- `*.pem`、`*.key`、`*.p12`
+- `id_rsa`、`id_ed25519`
+- `password`、`secret`、`api_key`、`token`
+- `aws_access_key`、`aws_secret_key`
+- 带密码的数据库连接串
 
-```
-【当前分支改动分析】
+发现风险时暂停，指出具体文件/片段，并询问用户是否继续。只有用户明确确认后才能继续。
 
-改动的文件：
-- src/main/java/UserService.java
-- src/test/java/UserServiceTest.java
-- src/main/java/UserController.java
+### 3. 提炼改动意图
 
-改动点总结（按功能归类）：
-1. 新增用户管理模块（UserService、UserController）
-2. 补充用户管理模块单元测试（UserServiceTest）
+把 diff 归纳成 1-3 个核心改动点，按"用户能从提交历史读懂什么"来写，不按文件逐个罗列。
 
-【推断的提交类型】:sparkles: 新功能
-```
+归纳规则：
 
-**归类原则**：
-- 同一功能/需求涉及的多个文件改动，合并为一条
-- 主代码 + 对应测试文件，如测试是配套新增的，可合并
-- 跨模块的改动，按模块分组
+- 同一需求涉及的主代码、测试、配置，合并成一条。
+- 只写结果和意图，不写琐碎实现步骤。
+- 多个互不相关的改动要提醒用户考虑拆分提交。
+- 如果已暂存和未暂存改动混在一起，说明当前将默认提交全部改动；用户可指定只提交部分文件。
 
-**等待用户确认**：
-- 询问用户改动点是否准确
-- 用户可以要求修改改动点
-- 如自动推断的 Gitmoji 不合适，用户可以指定其他类型
-- 用户确认无误后，进入下一阶段
+输出示例：
 
----
+```text
+我看到这次改动主要是：
+1. 简化 git-commit 技能流程，让 commit message 成为核心产物
+2. 保留冲突、安全检查和 push 前同步检查，但压缩提示噪音
 
-### 阶段 1.5：安全检查
-
-在生成 commit message 之前，检查改动中是否包含敏感信息。误提交凭证到仓库（尤其公开仓库）可能导致严重的安全事故，事后清理历史的成本很高。
-
-#### 敏感文件类型检查
-
-如改动包含以下文件，暂停并提醒用户：
-
-| 文件类型 | 风险 | 示例 |
-|----------|------|------|
-| 环境变量 | 🔴 | `.env`, `.env.local`, `.env.production` |
-| 凭证文件 | 🔴 | `credentials`, `credentials.json`, `service-account.json` |
-| 私钥证书 | 🔴 | `*.pem`, `*.key`, `*.p12`, `id_rsa`, `id_ed25519` |
-| AWS 配置 | 🔴 | `.aws/credentials`, `aws_config` |
-| 数据库配置 | 🔴 | `database.yml`, `config.json`（含密码） |
-| Git 凭证 | 🔴 | `.git-credentials`, `.git-creds` |
-| 其他敏感 | 🟡 | `*password*`, `*secret*`, `*token*`（文件名） |
-
-#### 敏感代码模式检查
-
-检查 `git diff` 内容是否包含以下模式：
-
-```
-🔴 高危模式（发现则警告）：
-- password = "xxx" / password: "xxx"
-- secret = "xxx" / secret_key = "xxx"
-- api_key = "xxx" / apiKey = "xxx"
-- token = "xxx"（长字符串）
-- private_key = "xxx"
-- aws_access_key / aws_secret_key
-- 数据库连接串（含密码）：mongodb://user:pass@
-- DB_PASSWORD, MYSQL_PASSWORD, REDIS_PASSWORD 等
-
-🟡 中危模式（建议提醒）：
-- 硬编码的邮箱 + 密码组合
-- base64 编码的长字符串
-- URL 含敏感查询参数
+建议使用 :memo:。
 ```
 
-#### 发现敏感信息时的处理流程
+### 4. 生成 commit message
 
-```
-⚠️ 警告：检测到可能的敏感信息
+#### 默认格式
 
-【检测到的内容】
-- 文件：.env
-- 改动：DB_PASSWORD=MyPassword123
+```text
+:emoji-name: 简洁标题
 
-【风险】
-提交此文件到公网可能导致：
-- 数据库被未授权访问
-- 敏感数据泄露
-- 账号被盗用
-
-【建议操作】
-1. 确认此文件是否已添加到 .gitignore
-2. 如未添加，执行：echo ".env" >> .gitignore
-3. 移除已暂存：git reset .env
-4. 使用环境变量或密钥管理服务
-
-是否确认继续提交？(是/否)
+1. 关键改动
+2. 关键改动
 ```
 
-**只有用户明确确认后，才能进入阶段 2。**
+#### 小改动格式
 
----
+如果改动很小，只输出一行：
 
-### 阶段 2：生成 commit message 并确认
-
-根据确认后的改动点和自动推断的 Gitmoji 生成 commit message。
-
-**格式**：
-```
-:emoji-name: <改动点总结>
-
-1. <改动点 1>
-2. <改动点 2>
-3. <改动点 3>
+```text
+:memo: 精简 git-commit 技能流程
 ```
 
-**示例**（新功能）：
-```
-:sparkles: 新增用户管理模块
+#### 写法约束
 
-1. 新增 UserService 处理用户业务逻辑（注册、登录、权限校验）
-2. 新增 UserController 提供 REST API 接口
-3. 新增 UserDTO 和 UserVO 数据传输对象
-4. 补充单元测试覆盖核心功能
-```
+- 标题优先控制在 30 个中文字符左右。
+- body 控制在 1-3 条；超过 3 条时先考虑是否应该拆分提交。
+- 不写"修改若干文件"、"优化代码"这类空泛描述。
+- 不把测试、格式化、依赖升级写进标题，除非它们是本次提交的核心。
+- Gitmoji 使用 `:name:` 格式。
 
-**示例**（Bug 修复）：
-```
-:bug: 修复用户登录验证问题
+#### Gitmoji 选择
 
-1. 修复 Token 过期导致的登录失败
-2. 添加登录失败次数限制
-```
+优先按改动意图选择。完整映射见 [`references/gitmoji-mapping.md`](references/gitmoji-mapping.md) 和 [`references/gitmojis.md`](references/gitmojis.md)。
 
-**示例**（综合改动）：
-```
-:sparkles: 新增数据导出功能并优化性能
+常用映射：
 
-1. 新增 ExportService 支持 Excel/CSV 格式导出
-2. 优化大数据量查询使用游标分页
-3. 添加导出任务异步处理机制
-4. :arrow_up: 升级 easyexcel 到 3.3.0
-5. :white_check_mark: 补充导出功能单元测试
-```
+| 场景 | Gitmoji |
+|------|---------|
+| 新功能 | `:sparkles:` |
+| Bug 修复 | `:bug:` |
+| 文档/技能说明 | `:memo:` |
+| 重构/流程整理 | `:recycle:` |
+| 测试 | `:white_check_mark:` |
+| 配置 | `:wrench:` |
+| 依赖升级 | `:arrow_up:` |
+| 删除 | `:fire:` |
+| 安全 | `:lock:` |
 
-**展示 commit message 并等待用户确认**——使用 AskUserQuestion 工具给用户 Yes/No 选择。
+展示 commit message 后询问用户是否确认。用户不满意时，根据用户反馈重写，不要争辩。
 
-**用户选择处理**：
+### 5. 暂存并提交
 
-1. **如果用户选择 Yes**：使用生成的 commit message，进入阶段 3
-2. **如果用户选择 No**：请用户输入想要的描述，重新生成后再次确认
-
-> 在用户确认 commit message 之前，不执行任何 git add 或 git commit 命令。
-
----
-
-### 阶段 3：执行 git add 暂存
-
-用户确认 commit message 后，执行暂存：
+用户确认 commit message 后再执行：
 
 ```bash
 git add -A
+git status --short
 ```
 
-或者根据用户需求暂存特定文件：
+展示将要提交的文件摘要，并确认是否继续。
+
+用户确认后执行提交。多行 commit message 使用多个 `-m`，避免依赖特定 shell 的换行引用行为：
+
 ```bash
-git add <file1> <file2>
+git commit -m ":memo: 精简 git-commit 技能流程" -m "1. 聚焦生成简洁 commit message" -m "2. 压缩冲突、安全检查和 push 提示"
 ```
 
-暂存后展示已暂存的文件列表，等待用户确认是否继续提交。
+提交成功后反馈：
 
----
+- commit hash
+- 分支名
+- commit message
 
-### 阶段 4：执行 git commit 提交
+### 6. 可选 push
 
-用户确认暂存文件无误后，执行提交：
-
-```bash
-git commit -m "<commit message>"
-```
-
-提交后展示结果：
-- 提交是否成功
-- 提交的简要信息（分支、文件数、commit hash 等）
-
----
-
-### 阶段 5：询问并执行推送远程仓库
-
-提交成功后，先执行远程同步检查，再询问用户是否推送。跳过同步检查直接推送可能在远程有新提交时产生冲突。
-
-#### 推送前远程同步检查
+提交成功后询问是否推送。用户选择推送时，先做远程状态检查：
 
 ```bash
-# 获取远程最新状态（不合并）
 git fetch origin
-
-# 查看本地与远程的差异
-git rev-list --left-right --count origin/<current-branch>...<current-branch>
+git branch --show-current
+git rev-list --left-right --count origin/<branch>...<branch>
 ```
 
-**根据检查结果分类处理**：
+处理规则：
 
-| 场景 | 输出含义 | 处理方式 |
-|------|----------|----------|
-| `0 N` | 远程无新提交，本地领先 N 个 | ✅ 可直接推送 |
-| `M N` | 远程有 M 个新提交，本地有 N 个 | ⚠️ 存在分歧，需先同步 |
-| `M 0` | 远程有 M 个新提交，本地无新提交 | ✅ 正常情况（极少出现） |
-| `0 0` | 本地与远程一致 | ✅ 无需推送 |
+- `0 N`：本地领先，可直接 `git push origin <branch>`。
+- `0 0`：本地与远程一致，无需 push。
+- `M N` 或 `M 0`：远程有新提交，暂停 push，提示用户先 pull/rebase。
+- 如果远程分支不存在，使用 `git push -u origin <branch>`。
 
-**如果远程有新提交（M > 0），提示用户**：
+远程分歧提示保持简短：
 
+```text
+远程分支有新提交，先暂停 push。
+
+建议先执行：
+git pull --rebase origin <branch>
+
+解决可能的冲突后，再重新 push。
 ```
-⚠️ 远程分支存在新提交，直接推送可能导致冲突
-
-【分支状态】
-- 本地分支：<current-branch>（领先本地 N 个提交）
-- 远程分支：origin/<current-branch>（远程有 M 个新提交）
-
-【建议操作（请选择）】
-1. 拉取并合并：git pull origin <current-branch>，解决冲突后再推送
-2. 拉取并变基：git pull --rebase origin <current-branch>，更清洁的提交历史
-3. 强制推送：git push --force-with-lease（⚠️ 仅限个人分支，切勿在共享分支使用）
-
-请选择操作后再推送。
-```
-
-**只有用户明确选择同步方式并完成同步后，才能执行推送。**
-
-#### 推送操作
-
-远程同步检查通过后，询问用户是否推送到远程仓库：
-
-```
-提交成功！当前分支为 <current-branch>，是否立即推送到远程仓库？
-
-【推送信息】
-- 本地分支： <current-branch>
-- 远程仓库： origin
-- 提交哈希： <commit-hash>
-
-重要提示：如不推送，此次提交将仅保存在本地
-
-请选择操作：
-1. 推送至远程仓库 (git push origin <current-branch>)
-2. 仅保留在本地（后续可手动推送）
-```
-
-**用户选择处理**：
-
-1. **如果用户选择推送**：执行推送命令并反馈结果
-   ```bash
-   git push origin <current-branch>
-   ```
-   如果远程分支不存在，自动使用上游分支设置：
-   ```bash
-   git push -u origin <current-branch>
-   ```
-
-2. **如果用户选择保留在本地**：告知用户如何手动推送
-   ```
-   已将提交保留在本地。
-   
-   以后可通过以下命令推送：
-   git push origin <current-branch>
-   ```
 
 ---
 
-## Gitmoji 映射
+## 输出风格
 
-根据改动特征自动选择最合适的 Gitmoji。完整的映射规则表见 [`references/gitmoji-mapping.md`](references/gitmoji-mapping.md)。
-
-> **完整 Gitmoji 参考**：见 [`references/gitmojis.md`](references/gitmojis.md)
-
----
-
-## 注意事项
-
-- **分阶段确认**：每个阶段都等待用户确认后再继续，避免误操作
-- **安全检查**：阶段 1.5 检查敏感文件和代码模式，防止凭证泄露
-- **冲突检测**：阶段 1 检测合并冲突，有冲突时终止流程让用户先解决
-- **推送前同步检查**：阶段 5 推送前 fetch 并检查远程分支状态，避免推送冲突
-- **无改动处理**：如工作目录干净，告知用户没有待提交的改动
-- **Gitmoji 格式**：使用 `:name:` 格式（如 `:sparkles:`），在 GitHub/GitLab 会自动渲染为 emoji
+- 先给 commit message，再给简短理由。
+- 不输出完整 diff 内容，除非用户要求。
+- 不做长篇 Git 教程；只给当前下一步。
+- 所有确认问题都围绕实际决策：message 是否可用、是否提交、是否 push。
