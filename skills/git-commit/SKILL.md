@@ -1,7 +1,8 @@
 ---
 name: git-commit
 description: >
-  Git Commit 生成器 — 以生成简洁、准确的 Gitmoji commit message 为核心，分析当前改动并在用户确认后提交。
+  Git Commit 生成器 — 以生成简洁、准确的 Gitmoji commit message 为核心，分析当前改动并在用户确认后提交；
+  用户明确“确认并提交”时，可将 message 确认与本地提交授权合并为一步。
   当用户想要提交代码、生成 commit message、提交改动、解决提交前冲突、或提交后推送时使用。
   触发词包括但不限于：提交代码、git commit、commit、提交一下、帮我提交、生成commit、
   提交改动、保存改动、推代码、发commit、写commit message、提交并推送。
@@ -23,6 +24,8 @@ description: >
 - 标题要短，一眼能看懂；body 只保留关键改动。
 - 小改动可以只有标题，不强行写编号列表。
 - 用户确认 commit message 前，不执行 `git add` 或 `git commit`。
+- 用户明确表达“确认并提交”“message 没问题，直接提交”等组合意图时，视为同时确认 commit message 并授权完成暂存与本地提交，无需重复询问。
+- 仅确认 commit message 不等于授权提交；`push` 始终需要独立确认，不包含在“确认并提交”中。
 - 冲突、安全风险、远程分歧只做必要提示；提示要短，并给出下一步。
 
 ---
@@ -142,20 +145,29 @@ git diff --cached
 | 删除 | `:fire:` |
 | 安全 | `:lock:` |
 
-展示 commit message 后询问用户是否确认。用户不满意时，根据用户反馈重写，不要争辩。
+展示 commit message 时，同时根据当前状态列出本次将暂存的文件摘要。只有用户已经看过 message 和提交范围，才询问是否确认，并明确给出两种回复语义：
+
+- 回复“确认”：只确认 commit message，暂存后仍会展示文件摘要并询问是否提交。
+- 回复“确认并提交”“直接提交”或其他同等明确表达：同时确认 commit message 并授权完成暂存与本地提交。
+
+只有在 commit message 和将暂存的文件摘要都已展示后，组合表达才构成本次提交的一次性授权。初始请求中的“帮我提交”“提交一下”只表示启动提交流程，不能跳过提交信息与范围确认。用户不满意时，根据反馈重写，不要争辩。
 
 ### 5. 暂存并提交
 
-用户确认 commit message 后再执行：
+用户确认 commit message 后执行：
 
 ```bash
 git add -A
 git status --short
 ```
 
-展示将要提交的文件摘要，并确认是否继续。
+始终展示将要提交的文件摘要，然后按用户刚才的授权语义处理：
 
-用户确认后执行提交。多行 commit message 使用多个 `-m`，避免依赖特定 shell 的换行引用行为：
+- 如果用户只确认了 commit message，展示摘要后询问是否提交。
+- 如果用户已明确“确认并提交”，且暂存文件与确认前展示的提交范围一致，则展示摘要后直接执行本地提交，不再重复确认。
+- 如果暂存时出现未说明的新文件、提交范围变化、敏感信息或其他风险，即使用户已说“确认并提交”也要暂停并重新确认。
+
+执行提交时，多行 commit message 使用多个 `-m`，避免依赖特定 shell 的换行引用行为：
 
 ```bash
 git commit -m ":memo: 精简 git-commit 技能流程" -m "1. 聚焦生成简洁 commit message" -m "2. 压缩冲突、安全检查和 push 提示"
@@ -169,7 +181,7 @@ git commit -m ":memo: 精简 git-commit 技能流程" -m "1. 聚焦生成简洁 
 
 ### 6. 可选 push
 
-提交成功后询问是否推送。用户选择推送时，先做远程状态检查：
+提交成功后询问是否推送。“确认并提交”只授权本地提交，不授权 push。用户明确选择推送时，先做远程状态检查：
 
 ```bash
 git fetch origin
@@ -202,4 +214,4 @@ git pull --rebase origin <branch>
 - 先给 commit message，再给简短理由。
 - 不输出完整 diff 内容，除非用户要求。
 - 不做长篇 Git 教程；只给当前下一步。
-- 所有确认问题都围绕实际决策：message 是否可用、是否提交、是否 push。
+- 所有确认问题都围绕实际决策：message 是否可用、是否提交、是否 push；用户已经明确授权的决策不要重复询问。
