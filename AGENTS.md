@@ -28,6 +28,7 @@ skills/<技能名>/
 | Git Commit 生成器 | `/git-commit` | 分析代码改动，生成带 Gitmoji 的 commit message，选项式一次确认后直接提交或提交并推送 |
 | Git Commit（Jira）生成器 | `/git-commit-jira` | 生成带 Jira ID 和 type 的 commit message，选项式一次确认后直接提交或提交并推送 |
 | Repo 架构图生成器 | `/repo-architecture-flow` | 分析仓库结构并生成 Mermaid 架构图，支持导出 SVG/PNG/PDF |
+| Shipyard 技术方案流程 | `/shipyard` | Spec 驱动开发全流程：概要设计 → 详细设计 → 任务拆解 → 逐任务实施，状态落盘、跨会话可恢复 |
 
 ---
 
