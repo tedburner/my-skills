@@ -1,14 +1,6 @@
 ---
 name: git-commit-jira
 description: "安全高效的Git提交技能 - 根据当前分支改动生成commit message，支持参数验证、智能type推断、冲突预防；展示改动点、message 与提交范围后以选项菜单一次确认，选择后直接提交或提交并推送"
-allowed-tools:
-  - Bash
-  - Read
-  - Glob
-  - Grep
-  - Edit
-  - Write
-  - AskUserQuestion
 ---
 
 # Git Commit 生成器
@@ -17,12 +9,12 @@ allowed-tools:
 
 ## 使用方式
 
-用户输入：`/git-commit <jira_id> <type>`
+用户输入：`/git-commit-jira <jira_id> <type>`
 
 例如：
-- `/git-commit AIME-123 feat`
-- `/git-commit JIRA-456 fix`
-- `/git-commit PROJ-789 refactor`
+- `/git-commit-jira AIME-123 feat`
+- `/git-commit-jira JIRA-456 fix`
+- `/git-commit-jira PROJ-789 refactor`
 
 如果用户忘记提供 Jira ID 或 type，技能会引导用户补充输入。
 
@@ -179,7 +171,7 @@ AIME-18432 fix 修复用户登录验证问题
 
 **展示 commit message 并用选项菜单一次确认**：
 
-展示 commit message 时，同时列出改动点总结、推断的 type 和将暂存的文件摘要，然后**必须使用 AskUserQuestion 工具**给出选项：
+展示 commit message 时，同时列出改动点总结、推断的 type 和将暂存的文件摘要，然后给出以下选项：
 
 ```
 【生成的 commit message】
@@ -200,6 +192,8 @@ AIME-18432 feat 新增用户管理模块
 3. 继续修改 — 按反馈调整改动点、type 或描述后重新生成
 4. 取消 — 不做任何操作
 ```
+
+**选择方式**：先检查当前运行环境可用的交互工具及其使用限制。若有允许用于本次提交授权的选项组件，优先通过该工具展示上述四项并等待用户选择；工具名称和参数以当前环境为准，不假定一定存在 `AskUserQuestion`。若组件无法同时完整展示四项或可靠返回选择、没有合适的组件、当前模式不允许用于授权，或调用失败，则在对话中列出相同的编号选项并等待用户文字回复。不得使用不允许用于授权的工具，也不能把默认选中、超时或未回复当作授权。
 
 **用户选择处理**：
 
@@ -241,59 +235,17 @@ git commit -m "<commit message>"
 
 ### 阶段 5：推送前冲突预防检测（仅当用户选择「提交并推送」）
 
-用户选择「提交并推送」时，本地提交成功后、推送前，**必须**先检测远程是否有新提交，防止推送冲突。
-
-**Step 1：拉取远程最新状态**
+本地提交成功后先 `git fetch origin`，检查当前分支对应的远程分支和分歧：
 
 ```bash
-git fetch origin
+git branch --show-current
+git rev-list --left-right --count origin/<current-branch>...<current-branch>
 ```
 
-**Step 2：检查是否与远程分叉**
-
-```bash
-git rev-list --count HEAD..origin/<current-branch>
-```
-
-- 返回 `0`：远程没有新提交，可安全推送，**跳过本阶段**，直接进入阶段 6（推送）
-- 返回 `>0`：远程有新提交，进入 Step 3
-
-**Step 3：执行 rebase 同步**
-
-```bash
-git pull --rebase origin <current-branch>
-```
-
-**Step 4：根据 rebase 结果判断**
-
-**情况 A — rebase 成功（无冲突）**：
-
-- 输出提示：`✅ 已与远程同步，可以安全推送`
-- 进入阶段 6（推送）
-
-**情况 B — rebase 产生冲突**：
-
-⚠️ **立即终止流程**，展示冲突信息并指引用户手动处理：
-
-```
-⚠️ 检测到合并冲突，流程已终止！
-
-冲突文件：
-- src/main/java/xxx/ServiceA.java
-- src/main/java/xxx/ControllerB.java
-
-请手动解决冲突：
-  1. 修改上述冲突文件（搜索 <<<<<<< 标记）
-  2. git add <已解决的文件>
-  3. git rebase --continue
-  4. git push origin <current-branch>
-
-冲突解决后可重新执行 /git-commit 推送。
-```
-
-**重要**：冲突情况下**不执行任何 git 操作**，不自动继续流程，全部交由用户手动处理。
-
----
+- 远程分支存在且无远程新提交：继续推送；双方一致则无需推送。
+- 远程有新提交：暂停推送，提示用户先同步并解决可能的冲突；不自动执行 rebase 或强推。
+- 远程分支不存在：进入阶段 6，按新分支方式设置上游。
+- 获取远程状态或分歧检查失败：说明原因并暂停，不将失败当成可以推送。
 
 ### 阶段 6：推送到远程
 
@@ -303,7 +255,7 @@ git pull --rebase origin <current-branch>
 git push origin <current-branch>
 ```
 
-如果远程分支不存在，提示用户设置上游分支：
+如果远程分支不存在，执行以下命令设置上游分支：
 ```bash
 git push -u origin <current-branch>
 ```
