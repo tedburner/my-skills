@@ -6,10 +6,10 @@
 
 | 技能名称 | 命令 | 说明 |
 |----------|------|------|
-| Git Commit 生成器 | `/git-commit` | 自动分析代码改动并生成 Gitmoji commit message；优先使用选项组件确认，支持编号列表回退；可提交或提交并推送 |
-| Git Commit（Jira）生成器 | `/git-commit-jira` | 生成带 Jira ID 和 type 的 commit message；优先使用选项组件确认，支持编号列表回退；可提交或提交并推送 |
+| Git Commit 生成器 | `/git-commit` | 分析代码与未跟踪文件改动生成 Gitmoji commit message；含冲突与敏感检查、范围控制、选项式一次确认与上游分歧检测 |
+| Git Commit（Jira）生成器 | `/git-commit-jira` | 支持 Jira ID 推断与精准 type 判定，生成 `<jira_id> <type>` message；含冲突/敏感拦截、选项式一次确认与远程同步检查 |
 | Repo 架构图生成器 | `/repo-architecture-flow` | 分析仓库结构并生成 Mermaid 架构图，支持导出 SVG/PNG/PDF |
-| Shipyard 技术方案流程 | `/shipyard` | Spec 驱动开发：模块目录、带确认状态的编号条目、逐接口契约与示例、任务验收及变更同步，支持跨会话恢复 |
+| Shipyard 技术方案流程 | `/shipyard` | Spec 驱动开发：支持轻量单文档与完整 HLD/LLD 模式、三档接口模板、本地与外部联调解耦验收、归档与跨会话恢复 |
 
 ---
 
