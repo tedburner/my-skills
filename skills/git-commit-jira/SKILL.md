@@ -2,13 +2,14 @@
 name: git-commit-jira
 description: >
   带 Jira ID 的规范化 Git 提交技能 — 根据当前分支改动生成 `<jira_id> <type> <总结>` 格式的
-  commit message，支持 Jira ID 上下文推断、精准 type 推断、冲突与敏感信息拦截，并以选项菜单一次确认后提交或推送。
-  当用户使用 Jira 编号提交代码（如 `/git-commit-jira AIME-123`、带 Jira 提交、按分支 Jira 号提交）时使用。
+  commit message，支持 Jira ID 上下文推断、精准 type 推断、冲突与敏感信息拦截，并以选项菜单确认后提交或推送。
+  当用户使用 Jira 单号提交代码（如 `/git-commit-jira AIME-123`、带 Jira/单号提交、按分支单号提交、公司规范 `<JIRA-ID> <type>` 提交）时使用；
+  不要用于 git log、git blame、git diff 等只读查看。
 ---
 
 # Git Commit（Jira）生成器
 
-以生成 **简洁、准确、符合 `<jira_id> <type>` 规范的 commit message** 为核心，展示改动点、message 与提交范围后通过选项菜单一次确认。
+以生成 **简洁、准确、符合 `<jira_id> <type> <总结>` 规范的 commit message** 为核心，展示改动点、message 与提交范围后通过选项菜单确认。
 
 ---
 
@@ -18,33 +19,35 @@ description: >
 
 - `jira_id`：Jira 任务编号（如 `AIME-123`），必需（未传时尝试从当前分支或近期提交推断候选）。
 - `type`：提交类型（如 `feat`、`fix`、`refactor` 等），可选；未提供时自动推断。
+- 若目标仓库 `AGENTS.md` / `CLAUDE.md` 或用户明确指定了细微变体（如 `<jira_id>: <type> ...`），以用户确认的仓库/公司规范为准。
 
 ---
 
 ## 执行流程
 
-### 1. 参数与 Jira ID 解析
+### 1. 分阶段读取状态与 Jira ID 解析
 
-- 若用户提供了 `jira_id`：自动将字母前缀规范为大写（如 `aime-123` → `AIME-123`）。
-- 若用户未提供 `jira_id`：先检查当前分支名（`git branch --show-current`）和最近 5 条提交（`git log -n 5 --oneline`）中是否包含 Jira 编号（如 `[A-Za-z]+-\d+`）：
-  - 找到明确候选时，先将其作为推荐 Jira ID 一并展示（可在确认阶段修改或重填）；
-  - 未找到候选时，请用户补充 Jira ID 后再继续。
-
-### 2. 读取改动与阻断检查
-
-执行最少只读命令查看状态与改动：
+先执行轻量只读命令，同时获取工作区状态、分支名、近期提交与改动规模（避免一开始全量输出大型 lockfile diff）：
 
 ```bash
 git status --short
+git branch --show-current
+git log -n 5 --oneline
 git diff --stat
 git diff --cached --stat
-git diff
-git diff --cached
 ```
 
-- **无改动**：工作区干净且无已暂存改动时，直接告知无需提交。
+- **无未提交改动时的处理**：
+  - 若工作区与暂存区均干净，但用户意图是**推送**（如“推代码”“帮我推一下”“推送”）：检查本地是否有领先远程的未推送提交；若有则展示待推送提交摘要与目标远端分支，经用户确认后跳至「6. 推送」执行，不以“无需提交”直接退出。
+  - 若只是常规提交请求且无未提交改动，直接告知工作区干净、无需提交。
+- **Jira ID 解析**：
+  - 用户已提供 `jira_id`：自动将字母前缀规范为大写（如 `aime-123` → `AIME-123`）。
+  - 用户未提供 `jira_id`：从 `git branch --show-current` 和 `git log -n 5 --oneline` 中提取候选单号（如 `[A-Za-z]+-\d+`）；找到明确候选时作为推荐 Jira ID 一并展示（可在确认阶段修改），未找到候选时请用户补充后再继续。
+
+### 2. 读取核心改动与阻断检查
+
+- **按需读取详细改动**：根据 `--stat` 跳过 lockfile（如 `package-lock.json`、`pnpm-lock.yaml`、`Cargo.lock`、`go.sum`）、自动生成物或大快照的全文输出，对核心代码与配置执行 `git diff` / `git diff --cached`。
 - **未跟踪新文件（`??`）**：`git diff` 不包含未跟踪文件正文，必须读取其关键内容以提炼改动意图并检查敏感信息，不能只看文件名猜测。
-- **大改动处理**：先看 `--stat` 评估体量，跳过 lockfile、自动生成物或大快照的全文输出。
 
 #### 合并冲突阻断
 
@@ -82,7 +85,7 @@ git diff --cached
 - 若多个互不相关的改动混在一起，提醒用户是否拆开提交。
 - 混有已暂存与未暂存改动时，默认说明将提交全部改动；若用户指定只提交已暂存内容或部分文件，按指定范围执行。
 
-### 4. 生成 commit message 并用选项菜单一次确认
+### 4. 生成 commit message 并用选项菜单确认
 
 #### 格式规范
 
@@ -100,7 +103,7 @@ git diff --cached
 
 #### 写法与示例对照
 
-- 描述“做了什么/解决什么”，避免堆砌方法名、路径或参数细节；不写“修改若干文件”等空泛词。
+描述“做了什么/解决什么”，避免堆砌方法名、路径或参数细节；不写“修改若干文件”等空泛词：
 
 ```text
 ❌ 1. 新增 UserService 处理用户登录、注册、权限校验等逻辑，新增 UserController 暴露 /api/v1/user/register
@@ -120,27 +123,26 @@ AIME-18505 perf 优化 LangChain 查询性能
 展示生成的 commit message（若推荐了推断的 `jira_id` 或 `type` 一并说明）以及本次将暂存/提交的文件摘要后，提供以下四项操作（先输出摘要与 message，再于同一轮直接弹出选择，不要只输出一句“请选择”而留空）：
 
 - 仅提交 — 按展示范围完成本地提交
-- 提交并推送 — 本地提交后检查远程并推送当前分支
+- 提交并推送 — 本地提交后检查远程并推送当前分支（若高优全局规则要求提交后单独确认推送，则本地提交后再确认一次）
 - 继续修改 — 按反馈调整 Jira ID、type、描述或提交范围
 - 取消 — 不做任何操作
 
 **交互选择规则**：
 - 若当前环境提供交互式单选工具（如 `ask_question`、`AskUserQuestion`、`request_user_input` 等）且允许使用，**必须在展示 message 与提交范围的同一轮直接调用该工具**，将上述四项作为单选选项传入并等待用户点击选择（若工具 UI 会自动编号，选项文本不要重复带 `1. 2.`）。
 - 仅当环境没有可用单选工具、当前模式禁止调用、或调用失败时，才回退为在对话正文中完整列出 `1.`–`4.` 编号选项并等待用户文字回复。
-- 不得把默认选中、超时或未回复当作授权。
-
-在用户通过菜单确认前，不执行 `git add` 或 `git commit`；初始请求中的“帮我提交”仅代表启动流程，不跳过展示确认。
+- 不得把默认选中、超时或未回复当作授权；在用户通过菜单确认前，不执行 `git add`、`git commit` 或 `git push`。初始请求中的“帮我提交”仅代表启动流程，不跳过展示确认。
+- **推送授权兼容**：默认「提交并推送」同时授权本地提交与推送；若当前会话存在更高优先级的用户全局规则明确要求“完成本地提交后须单独等待确认才可推送”，则遵从高优规则（本地提交完成后汇报 hash，再单独请用户确认推送）。
 
 ### 5. 暂存并提交
 
-用户选择「仅提交」或「提交并推送」后，按确认范围暂存（默认全部改动 `git add -A`；指定部分文件 `git add <file1> ...`；仅提交已暂存内容时不额外 `git add`）：
+用户确认提交后，按确认范围暂存（默认全部改动 `git add -A`；指定部分文件 `git add <file1> ...`；仅提交已暂存内容时不额外 `git add`）：
 
 ```bash
 git add -A
 git status --short
 ```
 
-- 若暂存时出现未说明的新文件、提交范围变化或敏感信息，即使已选择提交也要暂停并重新确认。
+- 若暂存时出现未说明的新文件、提交范围变化或敏感信息，即使已确认也要暂停并重新确认。
 - 多行 commit message **必须使用多个 `-m`**，避免换行和反引号在 shell 中转义异常：
 
 ```bash
@@ -151,20 +153,22 @@ git commit -m "AIME-18505 perf 优化 LangChain 查询性能" -m "1. 使用 Mong
 
 提交成功后反馈：commit hash、分支名与 commit message。
 
-### 6. 推送（仅当用户选择「提交并推送」）
+### 6. 推送（当用户授权推送时）
 
-本地提交成功后先检查当前分支与跟踪上游：
+执行推送前（若受高优全局规则约束尚未单独确认推送，须先请用户确认是否推送当前提交），先以跨平台安全方式检查当前分支与跟踪上游：
 
 ```bash
 git branch --show-current
-git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true
+git rev-parse --abbrev-ref --symbolic-full-name "@{u}"
 ```
 
+> **跨平台注意**：务必给 `"@{u}"` 加上双引号（防止 Windows PowerShell 将未加引号的 `@{u}` 解析为哈希表字面量报错），且不要拼接 bash 专属的 `2>/dev/null || true`。若 `git rev-parse` 返回非零退出码，即代表当前分支尚未配置跟踪上游，按下方“未配置跟踪上游”处理。
+
 - **Detached HEAD**（`git branch --show-current` 为空）：暂停推送，提示先切回或创建目标分支。
-- **已配置跟踪上游**（记为 `<remote>/<upstream_branch>`）：执行 `git fetch <remote>` 与 `git rev-list --left-right --count @{u}...HEAD`：
-  - `0 N`：执行 `git push <remote> HEAD:<upstream_branch>`（同名即 `git push <remote> <branch>`）。
+- **已配置跟踪上游**（记为 `<remote>/<upstream_branch>`）：执行 `git fetch <remote>` 与 `git rev-list --left-right --count "@{u}...HEAD"`：
+  - `0 N`（`N > 0`）：执行 `git push <remote> HEAD:<upstream_branch>`（同名即 `git push <remote> <branch>`）。
   - `0 0`：本地与远程一致，无需 push。
-  - `M N` 或 `M 0`：远程有新提交，暂停 push，提示先执行 `git pull --rebase <remote> <upstream_branch>`。
+  - `M N` 或 `M 0`（`M > 0`）：远程有新提交，暂停 push，提示先执行 `git pull --rebase <remote> <upstream_branch>`。
 - **未配置跟踪上游**：先 `git fetch origin` 并检查 `origin/<branch>`；存在则按 `origin/<branch>...HEAD` 检查分歧（无分歧后 `git push -u origin <branch>`），不存在则直接 `git push -u origin <branch>`。
 - 获取远程状态或分歧检查失败时，说明原因并暂停。
 

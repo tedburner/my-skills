@@ -1,3 +1,4 @@
-display_name: 仓库流程架构图
-short_description: 生成可编辑仓库架构图。
-default_prompt: 扫描当前仓库，并生成 SVG 和 drawio 两份流程架构图。
+interface:
+  display_name: "仓库流程架构图"
+  short_description: "扫描代码仓库生成风格统一的可编辑 .drawio 与 .svg 流程架构图"
+  default_prompt: "使用 $repo-architecture-flow 扫描当前仓库，生成自上而下风格的 SVG 和可编辑 drawio 流程架构图。"
