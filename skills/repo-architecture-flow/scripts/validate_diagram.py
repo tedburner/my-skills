@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic XML, Z-order, orthogonal routing, and text/box overlap validator
-for .svg and .drawio architecture diagrams.
+for .svg and .drawio architecture diagrams (supports both Engineering Standard
+and Sketch / Excalidraw themes, including A-vs-B comparison diagrams).
 
 Cross-platform using only the Python standard library.
 Exit code: 0 when no [ERROR] is found, 1 otherwise.
@@ -24,7 +25,9 @@ PLACEHOLDER_RE = re.compile(r"\b(?:TODO|FIXME|TBD)\b|\[PROJECT\]|<project>|\ufff
 HTML_BR_RE = re.compile(r"<\s*br\s*/?\s*>|</\s*(?:p|div|li|tr)\s*>", re.IGNORECASE)
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 CJK_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
-SVG_TOKEN_RE = re.compile(r"[MmLlHhVvZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+SVG_TOKEN_RE = re.compile(r"[MmLlHhVvQqCcAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+BADGE_ID_RE = re.compile(r"^(?:badge|pill|tag|chip)[-_]", re.IGNORECASE)
+HIGHLIGHT_ID_RE = re.compile(r"^(?:hl|highlight)[-_]", re.IGNORECASE)
 
 
 @dataclass
@@ -73,12 +76,21 @@ def estimate_line_px(text: str, font_size: float) -> float:
         if "\u4e00" <= ch <= "\u9fff" or "\u3000" <= ch <= "\u303f" or "\uff00" <= ch <= "\uffef":
             width += font_size * 1.05
         else:
-            width += font_size * 0.60
+            width += font_size * 0.56
     return width
 
 
 def extract_cjk_terms(text: str) -> set[str]:
     return set(CJK_RE.findall(text))
+
+
+def is_enclosed(inner: Box, outer: Box, tol: float = 2.5) -> bool:
+    return (
+        inner.x >= outer.x - tol
+        and inner.y >= outer.y - tol
+        and (inner.x + inner.w) <= (outer.x + outer.w + tol)
+        and (inner.y + inner.h) <= (outer.y + outer.h + tol)
+    )
 
 
 def check_svg_orthogonal_path(elem_id: str, d_attr: str, errors: list[str]) -> None:
@@ -91,8 +103,6 @@ def check_svg_orthogonal_path(elem_id: str, d_attr: str, errors: list[str]) -> N
         if tok.isalpha():
             cmd = tok
             i += 1
-            if cmd in ("Z", "z"):
-                continue
             continue
         try:
             if cmd == "M":
@@ -137,10 +147,81 @@ def check_svg_orthogonal_path(elem_id: str, d_attr: str, errors: list[str]) -> N
             elif cmd == "v":
                 cy += float(tokens[i])
                 i += 1
+            elif cmd == "Q":
+                # Quadratic curve: allowed for small 90-degree rounded corners (chord <= 32px)
+                nx, ny = float(tokens[i + 2]), float(tokens[i + 3])
+                dx, dy = abs(nx - cx), abs(ny - cy)
+                if dx > 28.0 and dy > 28.0 and math.hypot(dx, dy) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has sweeping diagonal Q-curve "
+                        f"({cx:.1f},{cy:.1f}) -> ({nx:.1f},{ny:.1f}); keep Q curves for rounded 90-deg corners only"
+                    )
+                cx, cy = nx, ny
+                i += 4
+            elif cmd == "q":
+                dx_raw, dy_raw = float(tokens[i + 2]), float(tokens[i + 3])
+                if abs(dx_raw) > 28.0 and abs(dy_raw) > 28.0 and math.hypot(dx_raw, dy_raw) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has sweeping diagonal relative q-curve d=({dx_raw:.1f},{dy_raw:.1f})"
+                    )
+                cx += dx_raw
+                cy += dy_raw
+                i += 4
+            elif cmd == "C":
+                nx, ny = float(tokens[i + 4]), float(tokens[i + 5])
+                dx, dy = abs(nx - cx), abs(ny - cy)
+                if dx > 28.0 and dy > 28.0 and math.hypot(dx, dy) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has sweeping diagonal C-curve "
+                        f"({cx:.1f},{cy:.1f}) -> ({nx:.1f},{ny:.1f})"
+                    )
+                cx, cy = nx, ny
+                i += 6
+            elif cmd == "c":
+                dx_raw, dy_raw = float(tokens[i + 4]), float(tokens[i + 5])
+                if abs(dx_raw) > 28.0 and abs(dy_raw) > 28.0 and math.hypot(dx_raw, dy_raw) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has sweeping diagonal relative c-curve d=({dx_raw:.1f},{dy_raw:.1f})"
+                    )
+                cx += dx_raw
+                cy += dy_raw
+                i += 6
+            elif cmd == "A":
+                nx, ny = float(tokens[i + 5]), float(tokens[i + 6])
+                dx, dy = abs(nx - cx), abs(ny - cy)
+                if dx > 28.0 and dy > 28.0 and math.hypot(dx, dy) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has large diagonal arc ({cx:.1f},{cy:.1f}) -> ({nx:.1f},{ny:.1f})"
+                    )
+                cx, cy = nx, ny
+                i += 7
+            elif cmd == "a":
+                dx_raw, dy_raw = float(tokens[i + 5]), float(tokens[i + 6])
+                if abs(dx_raw) > 28.0 and abs(dy_raw) > 28.0 and math.hypot(dx_raw, dy_raw) > 36.0:
+                    errors.append(
+                        f"SVG <path {elem_id}> has large relative diagonal arc d=({dx_raw:.1f},{dy_raw:.1f})"
+                    )
+                cx += dx_raw
+                cy += dy_raw
+                i += 7
             else:
                 i += 1
         except (IndexError, ValueError):
             break
+
+
+def iter_svg_non_defs(elem: ET.Element) -> list[ET.Element]:
+    out: list[ET.Element] = []
+
+    def walk(node: ET.Element) -> None:
+        if strip_ns(node.tag).lower() == "defs":
+            return
+        out.append(node)
+        for child in node:
+            walk(child)
+
+    walk(elem)
+    return out
 
 
 def validate_svg(path: Path, errors: list[str], warnings: list[str]) -> set[str]:
@@ -169,9 +250,11 @@ def validate_svg(path: Path, errors: list[str], warnings: list[str]) -> set[str]
     first_text_idx: int | None = None
     late_edges = 0
 
-    for idx, elem in enumerate(root.iter()):
+    for idx, elem in enumerate(iter_svg_non_defs(root)):
         tag = strip_ns(elem.tag).lower()
         elem_id = f"id='{elem.attrib.get('id', f'#{idx}')}'"
+        role = elem.attrib.get("data-role", "").lower()
+
         if tag == "text":
             if first_text_idx is None:
                 first_text_idx = idx
@@ -185,21 +268,19 @@ def validate_svg(path: Path, errors: list[str], warnings: list[str]) -> set[str]
                 except ValueError:
                     pass
         elif tag in ("line", "polyline", "path"):
-            in_defs = False
-            # Marker paths inside <defs> are arrowheads, not diagram edges
-            if tag == "path" and elem.attrib.get("d", "").strip().upper().endswith("Z"):
-                d_val = elem.attrib.get("d", "")
-                if len(d_val) < 40 and ("marker" in elem.attrib.get("id", "").lower() or "M 0" in d_val or "M0" in d_val):
-                    in_defs = True
-            if not in_defs and first_text_idx is not None:
-                late_edges += 1
+            if role in ("decor", "divider"):
+                continue
+            is_short_decor_line = False
             if tag == "line":
                 try:
                     x1 = float(elem.attrib.get("x1", "0"))
                     y1 = float(elem.attrib.get("y1", "0"))
                     x2 = float(elem.attrib.get("x2", "0"))
                     y2 = float(elem.attrib.get("y2", "0"))
-                    if abs(x2 - x1) > 3.0 and abs(y2 - y1) > 3.0 and math.hypot(x2 - x1, y2 - y1) > 18.0:
+                    seg_len = math.hypot(x2 - x1, y2 - y1)
+                    if seg_len <= 22.0 and not elem.attrib.get("marker-end"):
+                        is_short_decor_line = True
+                    elif abs(x2 - x1) > 3.0 and abs(y2 - y1) > 3.0 and seg_len > 18.0:
                         errors.append(
                             f"SVG <line {elem_id}> is diagonal ({x1:.1f},{y1:.1f})->({x2:.1f},{y2:.1f})"
                         )
@@ -213,12 +294,15 @@ def validate_svg(path: Path, errors: list[str], warnings: list[str]) -> set[str]
                         errors.append(
                             f"SVG <polyline {elem_id}> has diagonal segment ({x1:.1f},{y1:.1f})->({x2:.1f},{y2:.1f})"
                         )
-            elif tag == "path" and not in_defs:
+            elif tag == "path":
                 check_svg_orthogonal_path(elem_id, elem.attrib.get("d", ""), errors)
+
+            if not is_short_decor_line and first_text_idx is not None:
+                late_edges += 1
 
     if late_edges > 0:
         warnings.append(
-            f"SVG has {late_edges} line/path element(s) placed after <text> nodes; "
+            f"SVG has {late_edges} edge line/path element(s) placed after <text> nodes; "
             "place edges before cards/text so lines stay in the background layer"
         )
 
@@ -241,6 +325,22 @@ def load_mxgraph_root(diagram_elem: ET.Element, errors: list[str]) -> ET.Element
     except Exception as exc:
         errors.append(f"Failed to decode compressed Draw.io <diagram>: {exc}")
         return None
+
+
+def is_highlight_backing(b: Box, smap: dict[str, str]) -> bool:
+    if HIGHLIGHT_ID_RE.match(b.cell_id):
+        return True
+    return not html_to_lines(b.raw_value) and smap.get("strokeColor", "").lower() == "none" and b.h <= 48
+
+
+def is_inline_badge_in_card(small: Box, big: Box) -> bool:
+    if not is_enclosed(small, big):
+        return False
+    big_area = max(big.w * big.h, 1.0)
+    small_area = small.w * small.h
+    if BADGE_ID_RE.match(small.cell_id) and small_area < big_area * 0.65:
+        return True
+    return small.h <= big.h * 0.85 and small_area <= big_area * 0.38 and len(html_to_lines(small.raw_value)) == 1
 
 
 def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[str]:
@@ -324,30 +424,36 @@ def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[s
         return (px + b.x, py + b.y)
 
     abs_boxes: dict[str, Box] = {}
+    style_maps: dict[str, dict[str, str]] = {}
     for cid, b in rel_boxes.items():
         ax, ay = abs_xy(cid)
         abs_boxes[cid] = Box(cid, b.parent_id, ax, ay, b.w, b.h, b.style, b.raw_value, b.index)
+        style_maps[cid] = parse_style(b.style)
 
-    # Identify background containers vs foreground leaf module cards
+    # Identify background containers & marker highlight backings vs foreground cards
     container_ids: set[str] = set(parent_children.keys())
+    highlight_ids: set[str] = set()
     max_width = max((b.w for b in abs_boxes.values()), default=0.0)
+
     for cid, b in abs_boxes.items():
-        smap = parse_style(b.style)
-        # Wide band frames or dashed group boxes without multi-line card content act as background containers
-        if b.w >= max_width * 0.75 and b.h >= 80:
+        smap = style_maps[cid]
+        if is_highlight_backing(b, smap):
+            highlight_ids.add(cid)
+            continue
+        if b.w >= max_width * 0.75 and b.h >= 80 and not html_to_lines(b.raw_value):
             container_ids.add(cid)
-        elif smap.get("dashed") == "1" and b.h >= 70 and len(html_to_lines(b.raw_value)) <= 1:
+            continue
+        if smap.get("dashed") == "1" and b.h >= 70 and len(html_to_lines(b.raw_value)) <= 1:
             container_ids.add(cid)
-        # Container check: boxes that geometrically enclose >= 2 smaller boxes
+            continue
         enclosed = sum(
             1
             for oid, ob in abs_boxes.items()
             if oid != cid
-            and ob.x >= b.x - 2
-            and ob.y >= b.y - 2
-            and (ob.x + ob.w) <= (b.x + b.w + 2)
-            and (ob.y + ob.h) <= (b.y + b.h + 2)
+            and oid not in highlight_ids
+            and is_enclosed(ob, b)
             and (ob.w * ob.h) < (b.w * b.h * 0.85)
+            and not is_inline_badge_in_card(ob, b)
         )
         if enclosed >= 2:
             container_ids.add(cid)
@@ -357,7 +463,15 @@ def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[s
                     "split into blank frame + header bar to prevent center-text overlap"
                 )
 
-    leaf_cards = [b for cid, b in abs_boxes.items() if cid not in container_ids and parse_style(b.style).get("text") != "1"]
+    leaf_cards = [
+        b
+        for cid, b in abs_boxes.items()
+        if cid not in container_ids
+        and cid not in highlight_ids
+        and style_maps[cid].get("text") != "1"
+        and b.w > 4
+        and b.h > 4
+    ]
     first_leaf_idx = min((b.index for b in leaf_cards), default=None)
     if first_leaf_idx is not None:
         edges_after_cards = [
@@ -372,7 +486,7 @@ def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[s
                 "module card vertices; place all edge mxCells before module card vertices so lines never cover text"
             )
 
-    # Edge orthogonal style & center-anchor check
+    # Edge orthogonal style & cross-column waypoint check
     for idx, cell, smap in edges:
         eid = cell.attrib.get("id", f"edge_{idx}")
         edge_style = smap.get("edgeStyle", "")
@@ -382,7 +496,6 @@ def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[s
         tgt = cell.attrib.get("target")
         if src in abs_boxes and tgt in abs_boxes:
             sb, tb = abs_boxes[src], abs_boxes[tgt]
-            # Check if crossing columns between cards without exit/entry or explicit waypoints
             s_cx, t_cx = sb.x + sb.w / 2.0, tb.x + tb.w / 2.0
             geom = next((c for c in cell if strip_ns(c.tag) == "mxGeometry"), None)
             has_points = geom is not None and any(strip_ns(c.tag) == "Array" for c in geom)
@@ -395,42 +508,63 @@ def validate_drawio(path: Path, errors: list[str], warnings: list[str]) -> set[s
     for cid, b in abs_boxes.items():
         if b.parent_id in abs_boxes:
             pb = abs_boxes[b.parent_id]
-            if (
-                b.x < pb.x - 2
-                or b.y < pb.y - 2
-                or (b.x + b.w) > (pb.x + pb.w + 2)
-                or (b.y + b.h) > (pb.y + pb.h + 2)
-            ):
+            if not is_enclosed(b, pb, tol=2.5):
                 errors.append(
                     f"Draw.io vertex id='{cid}' overflows its parent container id='{pb.cell_id}'"
                 )
 
-    # Leaf card overlap check
-    check_nodes = [b for cid, b in abs_boxes.items() if cid not in container_ids and b.w > 8 and b.h > 8]
+    # Leaf card & text overlap check (exempting highlight backings, thin dividers, and valid inline badges)
+    check_nodes = [
+        b
+        for cid, b in abs_boxes.items()
+        if cid not in container_ids
+        and cid not in highlight_ids
+        and b.w > 6
+        and b.h > 6
+    ]
     for i, a in enumerate(check_nodes):
         for b in check_nodes[i + 1 :]:
             ix = min(a.x + a.w, b.x + b.w) - max(a.x, b.x)
             iy = min(a.y + a.h, b.y + b.h) - max(a.y, b.y)
-            if ix > 3.0 and iy > 3.0:
-                errors.append(
-                    f"Draw.io elements overlap: id='{a.cell_id}' ({a.x:.0f},{a.y:.0f},{a.w:.0f}x{a.h:.0f}) "
-                    f"and id='{b.cell_id}' ({b.x:.0f},{b.y:.0f},{b.w:.0f}x{b.h:.0f}) intersect by {ix:.0f}x{iy:.0f}px"
-                )
+            if ix <= 3.0 or iy <= 3.0:
+                continue
+            # Allow valid inline code pill badge nested inside its host step card
+            if is_inline_badge_in_card(a, b) or is_inline_badge_in_card(b, a):
+                host, badge = (b, a) if is_inline_badge_in_card(a, b) else (a, b)
+                host_smap = style_maps[host.cell_id]
+                host_lines = html_to_lines(host.raw_value)
+                if host_lines:
+                    try:
+                        h_fs = float(host_smap.get("fontSize", "12"))
+                    except ValueError:
+                        h_fs = 12.0
+                    label_px = estimate_line_px(host_lines[0], h_fs)
+                    if label_px + badge.w + 28.0 > host.w:
+                        warnings.append(
+                            f"Draw.io inline badge id='{badge.cell_id}' inside id='{host.cell_id}' may crowd host text "
+                            f"(label ~{label_px:.0f}px + badge {badge.w:.0f}px > card width {host.w:.0f}px)"
+                        )
+                continue
+            errors.append(
+                f"Draw.io elements overlap: id='{a.cell_id}' ({a.x:.0f},{a.y:.0f},{a.w:.0f}x{a.h:.0f}) "
+                f"and id='{b.cell_id}' ({b.x:.0f},{b.y:.0f},{b.w:.0f}x{b.h:.0f}) intersect by {ix:.0f}x{iy:.0f}px"
+            )
 
     # Text capacity check
     for cid, b in abs_boxes.items():
         lines = html_to_lines(b.raw_value)
         if not lines or b.w <= 0 or b.h <= 0:
             continue
-        smap = parse_style(b.style)
+        smap = style_maps[cid]
         try:
             font_size = float(smap.get("fontSize", "12"))
         except ValueError:
             font_size = 12.0
         if font_size < 10.0:
             warnings.append(f"Draw.io vertex id='{cid}' has fontSize={font_size:g} (< 10px minimum)")
-        pad_x = 12.0 if smap.get("text") != "1" else 4.0
-        pad_y = 8.0 if smap.get("text") != "1" else 2.0
+        is_compact_pill = bool(BADGE_ID_RE.match(cid)) or b.h <= 28.0
+        pad_x = 4.0 if smap.get("text") == "1" else (8.0 if is_compact_pill else 12.0)
+        pad_y = 2.0 if smap.get("text") == "1" else (4.0 if is_compact_pill else 8.0)
         usable_w = max(b.w - pad_x, font_size)
         wrapped_lines = 0
         for line in lines:

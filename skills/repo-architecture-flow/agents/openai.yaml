@@ -1,4 +1,4 @@
 interface:
-  display_name: "仓库流程架构图"
-  short_description: "扫描代码仓库生成风格统一的可编辑 .drawio 与 .svg 流程架构图"
+  display_name: "仓库流程与对比架构图"
+  short_description: "生成工程标准风或 Excalidraw 手绘风的 .drawio 与 .svg 架构/对比图"
   default_prompt: "使用 $repo-architecture-flow 扫描当前仓库，生成自上而下风格的 SVG 和可编辑 drawio 流程架构图。"
